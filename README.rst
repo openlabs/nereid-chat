@@ -87,6 +87,22 @@ Example of a complete stanza
                         "displayName": "Martin Smith"
                     },
                 },
+            },
+            {
+                "type": "presence"
+                "presence": [
+                    {
+                        "entity": "nereid.user,123",
+                        "show": "chat",
+                        "status": "A happy day",
+                        "available": true,
+                    }, {
+                        "entity": "nereid.user,13",
+                        "show": "dnd",
+                        "status": "Busy in a meeting",
+                        "available": true,
+                    }
+                ],
             }
         ]
 
