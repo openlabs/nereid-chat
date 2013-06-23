@@ -1,0 +1,147 @@
+#chat-line{
+	position: fixed;
+	bottom: 0px;
+	width: 100%;
+	overflow: visible;
+	height:1px;
+	font-family: helvetica;
+	font-size: 1em;
+}
+.chat-popup-wrapper{
+	float: right;
+	width: 270px;
+	margin: 0px;
+	margin-right: 20px;
+	position: relative;
+	overflow: visible;
+	height: 1px;
+}
+.chat-friends-list{
+	width: 200px;
+}
+.chat-popup{
+	width: inherit;
+	background: #AAAAAA;
+	border-radius: 3px 3px 0 0;
+	padding: 4px;
+	position: absolute;
+	bottom: 0px;
+}
+.chat-popup .header{
+	color: #ffffff;
+	padding: 5px;
+	font-weight: bold;
+    text-transform: capitalize;
+}
+.chat-popup .header .btn-close,
+.chat-popup .header .btn-minimize {
+	display: inline-block;
+	padding: 0px 5px;
+	float: right;
+	margin-left: 3px;
+	cursor: pointer;
+	border-radius: 3px;
+}
+.chat-popup .header .btn-close:hover,
+.chat-popup .header .btn-minimize:hover {
+	background: #efefef;
+	color: #000;
+}
+.chat-popup .inner{
+	color: #000;
+    overflow: hidden;
+}
+.chat-friends-list .inner{
+	background: #fff;
+}
+.chat-friends-list .item{
+
+}
+.chat-window{
+	padding: 5px;
+	height: 250px;
+	overflow: auto;
+	background: #eeeeee;
+}
+.chat-popup .inner .push_chat{
+	display: block;
+	margin-top: 1px;
+}
+.clear{
+	clear: both;
+}
+
+.chat-window .item{
+	background: #ffffff;
+	margin: 5px 3px;
+	padding: 5px;
+}
+
+.chat-window .item .title{
+	font-weight: bold;
+	text-transform: capitalize;
+}
+.chat-window .item .message{
+	text-align: right;
+}
+.chat-window .notification{
+	text-align: center;
+	padding: 5px;
+}
+.chat-window .offline{
+	color: #F00;
+}
+.chat_input{
+	width: 264px;
+	border: none;
+	margin: 0px;
+	padding: 8px 3px;
+	color: #666;
+    min-height: 18px;
+    height: 18px;
+    max-height: 100px;
+}
+.chat_input:focus{
+	border: none;
+	box-shadow: none;
+	outline: none;
+}
+
+
+/* FRIENDS LIST
+------------------*/
+
+.user{
+	display: block;
+	padding: 3px 5px;
+	border-bottom: #999 solid 1px;
+	cursor: pointer;
+	text-transform: capitalize;
+	font-size: .9em;
+}
+.user:hover{
+	background: #efefef;
+}
+.chat-presence{
+	display: inline-block;
+	width: .7em;
+	height: .7em;
+	background: #999;
+	border-radius: 20em;
+}
+.user[data-online="true"] .chat-presence{
+	background: #0C0;
+}
+.chat-status{
+	color: #777;
+	font-style: italic;
+	font-size: .9em;
+	text-transform: none;
+}
+.chat-friends-list .chat-popup .header{
+	cursor: pointer;
+}
+.chat-friends-list .chat-popup .inner{
+	max-height: 300px;
+	overflow-y: auto;
+}

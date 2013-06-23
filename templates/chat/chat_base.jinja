@@ -1,0 +1,52 @@
+<script type="text/template" id="chat-template">
+	<div class="chat-popup-wrapper chat-user-box">
+	  <div class="chat-popup" id="chat-<%= thread_id %>" user_id="<%= user_id %>">
+	    <div class="header">
+	      <%= title %>
+	      <span class="btn-close">&times;</span>
+	      <span class="btn-minimize">&#8211;</span>
+	      <div class="clear"></div>
+	    </div>
+	    <div class="inner">
+	      <div class="chat-window">
+	      </div>
+	      <form action="{{ url_for('nereid.chat.send_message') }}" method="post" class="push_chat">
+	        <textarea class="chat_input" name="message"></textarea>
+	        <input type="hidden" name="thread_id" value="<%= thread_id %>" />
+	        <input type="hidden" name="user_id" value="<%= thread_id %>" />
+	      </from>
+	    </div>
+	  </div>
+	</div>
+</script>
+<script type="text/template" id="status-template">
+  <a class="user" data-user="<%= entity.id %>" data-online="<%= available %>">
+    <span class="chat-presence"></span> <span class="display_name"><%= entity.displayName %></span> <span class="chat-status"> <%= status %></span>
+  </a>
+</script>
+<script type="text/template" id="chat-base">
+  <div id="chat-line">
+    <div class="chat-popup-wrapper chat-friends-list">
+      <div class="chat-popup">
+        <div class="header">Friends List</div>
+        <div class="inner" id="users">
+        </div>
+      </div>
+    </div>
+  </div>
+</script>
+<script type="text/template" id="chat-message">
+	<div class="item">
+		<div class="title">
+			<%= sender.displayName %>
+		</div>
+		<div class="message">
+			<%= text %>
+		</div>
+	</div>
+</script>
+<script type="text/template" id="chat-notification">
+	<div class="notification <%= type %>">
+		<%= message %>
+	</div>
+</script>
