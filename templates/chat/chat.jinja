@@ -1,0 +1,194 @@
+{% set user = request.args.get('user', None) %}
+$(function(){
+  $.get("{{ url_for('nereid.chat.chat_template') }}", function(data){
+    $("head").append(data);
+
+    /* Loading templates */
+    var chat_template = _.template($("script#chat-template").html());
+    var status_template = _.template($("script#status-template").html());
+    var chat_message = _.template($("script#chat-message").html());
+    var chat_notification = _.template($("script#chat-notification").html());
+
+    $("body").prepend($("script#chat-base").html());
+    function init(){
+      $(".push_chat").off("submit").submit(function(e){
+        e.preventDefault();
+        var form = $(this);
+        $.post(form.attr('action'), form.serialize())
+        .done(function(data){
+          $(form).find(".chat_input").val('').focus().height("auto");
+          if(!data.success){
+            $(form).prev().append(chat_notification({'message': "Message could not be sent, user is currently offline.", 'type': 'offline'}));
+          }
+        });
+      });
+      $(".chat_input").off("keydown").keydown(function(event) {
+        $(this).height($(this).get(0).scrollHeight-16);
+        var chat_popup = $(this).closest("div.chat-popup");
+        var chat_window = chat_popup.find(".chat-window");
+        if (event.which == 13) {
+          event.preventDefault();
+          if($(this).val().trim()){
+            /* Empty message is not allowed to post */
+            chat_window.find(".offline").remove();
+            $(this).closest("form").submit();
+          }
+        }
+        if (event.which == 27) {
+          /* Close on pressing Escape */
+          event.preventDefault();
+          $(this).closest("div.chat-popup").trigger('close');
+        }
+      });
+      $("div.chat-popup").off("min-max").on("min-max", function(){
+        $(this).find(".inner").slideToggle(200);
+      });
+      $("div.chat-popup").off("close").on("close", function(){
+        $(this).closest(".chat-popup-wrapper").hide();
+      });
+      $("div.chat-popup .header").off("click").click(function(){
+        $(this).next().click();
+      });
+      $("div.chat-popup .header .btn-close").off("click").click(function(){
+        $(this).closest("div.chat-popup").trigger('close');
+      });
+      $("div.chat-popup .header .btn-minimize").off("click").click(function(){
+        $(this).closest("div.chat-popup").trigger('min-max');
+      });
+      $("div.chat-popup .inner").off("click").click(function(){
+        $(this).find(".chat_input").focus();
+      });
+      resize();
+    }
+
+    function resize(){
+      width = $("#chat-line").width() - 220;
+      box_count = $(".chat-user-box").length;
+      if (!box_count) return false;
+      box_width = (width / $(".chat-user-box").length) - 20;
+      if (box_width < 270){
+        $(".chat-user-box").width(box_width);
+        $(".chat_input").width(box_width-6);
+      }
+      else{
+        $(".chat-user-box").width(270);
+        $(".chat_input").width(264);
+      }
+    }
+
+    $(window).resize(function(){
+      $("#chat-line").width($(window).width())
+      resize();
+    });
+
+    function get_chat_popup(thread_id, title, user_id){
+      console.log("thread_id :" + thread_id);
+      console.log(title);
+      if(!$('#chat-' + thread_id).length){
+        $("#chat-line").append(chat_template({'thread_id': thread_id, 'title': title, 'user_id': user_id}));
+        init();
+      }
+      var chat_popup = $('#chat-' + thread_id).find(".inner").slideDown(200);
+      $(chat_popup).closest(".chat-popup-wrapper").show();
+      //$(chat_popup).find("textarea.chat_input").focus();
+      return chat_popup;
+    }
+
+    function start_chat(user){
+      if($(".user[data-user='" + user + "']").data('thread_id')){
+        get_chat_popup($(".user[data-user='" + user + "']").data('thread_id'), $(".user[data-user='" + user + "'] .display_name").html(), user);
+        return false;
+      }
+      $.post("{{ url_for('nereid.chat.start_session') }}", "user=" + user)
+      .done(function(data){
+        if (data.success){
+          console.log(user);
+          $(".user[data-user='" + user + "']").data('thread_id', data.thread_id);
+          get_chat_popup($(".user[data-user='" + user + "']").data('thread_id'), $(".user[data-user='" + user + "'] .display_name").html(), user);
+        }
+      });
+    }
+
+    function parse_message(stanza){
+      var chat_title = "";
+      _.each(stanza.message.members, function(member){
+        if(member.id != {{ request.nereid_user.id }}){
+          chat_title += member.displayName + ", ";
+
+          /* TODO: This will not work in case of group chat. Change it for group chat. */
+          user_id = member.id;
+        }
+      });
+      var chat_window = get_chat_popup(stanza.message.thread, chat_title.slice(0, -2).substr(0, 20), user_id).find('.chat-window');
+      chat_window.append(chat_message(stanza.message));
+      chat_window.stop().animate({
+        scrollTop: chat_window.get(0).scrollHeight
+      }, 500);
+    }
+
+    function parse_presence(stanza){
+      var user = $(".user[data-user='" + stanza.entity.id + "']");
+      if (!user.length){
+        $("#users").append(status_template(stanza));
+        user = $(".user[data-user='" + stanza.entity.id + "']");
+      }
+      if(!$(user).data("online") && stanza.available){
+        $.meow({
+          title: 'presence',
+          message: stanza.entity.displayName + ' is online',
+        });
+        $("#chat-" + $(user).data('thread_id') + " .chat-window .offline").remove();
+      }
+      $(user).attr("data-online", stanza.available);
+      $(user).data("online", stanza.available);
+      $(user).find(".chat-status").html(stanza.status);
+      if($(user).data("online")){
+        $(user).off('click').click(function(e){
+          e.preventDefault();
+          start_chat($(this).data("user"));
+        });
+      }
+      else{
+        $(user).off('click').click(function(e){
+          start_chat($(this).data("user"));
+          $.meow({
+            title: 'Not Available',
+            message: 'Sorry, ' + $(user).find('.display_name').html() + ' is currently unavailable for chat.',
+          });
+        });
+      }
+    }
+
+    if(typeof(EventSource)=="undefined")
+    {
+      $.meow({
+        title: 'Error',
+        message: 'Chat Not Supported',
+      });
+    }
+    sse = new EventSource('{{ url_for("nereid.chat.stream") }}');
+    sse.onmessage = function(message) {
+        console.log('newmessage');
+        console.log(message.data);
+        var obj = $.parseJSON(message.data);
+        if(obj.type == "message"){
+          parse_message(obj);
+        }
+        if(obj.type == "presence"){
+          parse_presence(obj.presence);
+        }
+    }
+    /* Fetch Friends list */
+    setTimeout(function(){
+      $.get("{{ url_for('nereid.user.chat_friends') }}", function(data){
+        _.each(data.friends, function(member){
+          parse_presence(member);
+        });
+      });
+    }, 1000);
+    init();
+    $(".chat-friends-list .chat-popup .header").click(function(){
+      $(this).closest("div.chat-popup").trigger('min-max');
+    });
+  });
+});

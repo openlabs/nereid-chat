@@ -1,0 +1,23 @@
+{% extends 'base.jinja' %}
+{% block extra_head %}
+	{% if request.is_guest_user %}
+		<script> location.href="{{ url_for('nereid.website.login') }}" </script>
+	{% endif%}
+	<script type="text/javascript" src="{{ url_for('nereid.chat.chat_js') }}"></script>
+	<script>
+		function notify() {
+		  if (window.webkitNotifications.checkPermission() == 0) {
+		    window.webkitNotifications.createNotification(
+		        'icon.png', 'Notification Title', 'Notification content...');
+		  } else {
+		    window.webkitNotifications.requestPermission();
+		  }
+		};
+	</script>
+{% endblock %}
+{% block main %}
+	{% if not request.is_guest_user %}
+        <a href="{{ url_for('nereid.website.logout') }}">({{ request.nereid_user.id }}) logout</a>
+
+	{% endif%}
+{% endblock %}

@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+{% set STATIC = url_for('static', filename='', language=None) %}
+<html>
+    <head>
+        <script type="text/javascript" src="{{ STATIC }}js/jquery.min.js"></script>
+        <script type="text/javascript" src="{{ STATIC }}js/jquery.meow.js"></script>
+        <script type="text/javascript" src="{{ STATIC }}js/underscore-min.js"></script>
+        <link rel="stylesheet" href="{{ STATIC }}css/jquery.meow.css" />
+        <link rel="stylesheet" href="{{ STATIC }}css/custom.css" />
+
+        {% block extra_head %}
+        {% endblock %}
+    </head>
+    <body>
+
+    {% block main %}
+    {% endblock %}
+
+    {% block scripts %}
+    {% endblock %}
+
+    </body>
+</html>
