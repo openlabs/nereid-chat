@@ -1,0 +1,287 @@
+Browser based Chat 1.0
+======================
+
+This document describes the protocol behind the chat system used by
+nereid. We looked around for a possible standard based on which we could
+write a chat application which works within the browser. The search was
+futile and this is an attempt to write a generic implementation inspired
+by XMPP to address browser based chat.
+
+1. Introduction
+---------------
+
+1.1 Overview
+~~~~~~~~~~~~
+
+This protocol is a protocol fr streaming JSON in order to exchange messages
+and presence information in close to realtime.
+
+1.2 Requirements
+~~~~~~~~~~~~~~~~
+
+1. Compatible with most browsers.
+2. Compatible with proxies
+3. Fully compatible with HTTP/1.0.
+4. Fault Tolerant
+5. Extensible
+6. MUC rooms
+
+2. Concepts
+-----------
+
+
+2.1 Authentication
+~~~~~~~~~~~~~~~~~~
+
+This protocol does not define any authentication mechanism of its own, but
+leaves it to the underlying HTTP layer. 
+
+2.2 Thread 
+~~~~~~~~~~
+
+Thread an identifier that is used for tracking a conversation thread
+(sometimes referred to as an "instant messaging session") between two 
+entities.
+
+Every conversation in the system, to an individual user or to a group of
+users (MUC) happens in a thread. When a new message is initiated to an
+individual or a group of users, a thread is created if one does not
+already exist with the given users. The thread id need not be human
+readable. 
+
+3. Syntax of Stanzas
+--------------------
+
+The basic semantics and common attributes of JSON objects specific to the
+implementation are outlined below. 
+
+Example of a complete stanza
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code:: js
+
+    {
+        "timestamp": "2011-02-10T15:04:55Z",
+        "stanzas": [
+            {
+                "type": "message"
+                "message": {
+                    "subject": "Optional topic of conversation",
+                    "text": "The message body"
+                    "type": "plain",
+                    "language": "en_US",
+                    "attachments": [
+                    ],
+                    "id": "",
+                    "thread": "thread-id",
+                    "sender": {
+                        "url": "http://example.org/martin",
+                        "objectType": "person",
+                        "id": "tag:example.org,2011:martin",
+                        "foo2": "some other extension property",
+                        "image": {
+                          "url": "http://example.org/martin/image",
+                          "width": 250,
+                          "height": 250
+                        },
+                        "displayName": "Martin Smith"
+                    },
+                },
+            },
+            {
+                "type": "presence"
+                "presence": [
+                    {
+                        "entity": "nereid.user,123",
+                        "show": "chat",
+                        "status": "A happy day",
+                        "available": true,
+                    }, {
+                        "entity": "nereid.user,13",
+                        "show": "dnd",
+                        "status": "Busy in a meeting",
+                        "available": true,
+                    }
+                ],
+            }
+        ]
+
+
+
+3.1 Message
+~~~~~~~~~~~
+
+Message stanzas are used to push information to another entity. Messages
+sent in the context of a chat conversation are sent in a message stanza to
+the recipients.
+
+3.1.1 Subject
+.............
+
+The `subject` attribute contains human-readable data that specifies the topic
+of the message. The attribute is optional
+
+3.1.2 Text
+...........
+
+The `text` attribute contains human-readable data that specifies the
+textual contents of the message; this attribute is normally included 
+but is OPTIONAL.
+
+3.1.3 Type 
+...........
+
+The `type` attribute contains the Content-Type minor for the textual
+contents of the message. The attribute is OPTIONAL and the default value
+of the type is assumed to be `plain`. Possible values are:
+
+* `plain`
+* `html`
+* `rst`
+
+3.1.4 Language
+..............
+
+The `language` attribute is used to help identify the human language in
+which the textual contents of the message are composed. The language is
+specified in accordance with the IETF best practice, specified by `RFC
+5646` and `RFC 4647` for easy parsing by a computer. An example of
+language is `en-US` (English as used in the United States (US is the 
+ISO 3166‑1 country code for the United States)
+
+3.1.5 Attachments
+.................
+
+TODO
+
+3.1.6 ID
+........
+
+This is meant to be a RFC 4122 compliant GUID for the message generated on
+the client side. An UUID v4 generated should be sufficient. 
+
+3.1.7 Thread
+............
+
+The thread attribute contains non-human-readable character data specifying an
+identifier that is used for tracking a conversation thread (sometimes referred
+to as an "instant messaging session") between two entities. The value of the 
+thread attribute is generated by the sender and SHOULD be copied back in any 
+replies. 
+
+If left empty, the server implementation could decide if the message is a
+continuation of an existing conversation or a new conversation could be
+created for the purpose.
+
+If used, it MUST be unique to that conversation thread within the stream and 
+MUST be consistent throughout that conversation (a client that receives a 
+message from the same sender but with a different thread ID MUST assume that 
+the message in question exists outside the context of the existing conversation 
+thread).
+
+3.1.8 Sender
+............
+
+Inspired from the actor in activity stream specification.
+
+TODO: Elaborate in detail
+
+
+3.1.9 Example Message
+.....................
+
+.. code:: js
+
+    {
+        "timestamp": "2011-02-10T15:04:55Z",
+        "type": "message"
+        "message": {
+            "subject": "Optional topic of conversation",
+            "text": "The message body"
+            "type": "plain",
+            "language": "en_US",
+            "attachments": [
+            ],
+            "id": "",
+            "thread": "thread-id",
+            "sender": {
+                "url": "http://example.org/martin",
+                "objectType": "person",
+                "id": "tag:example.org,2011:martin",
+                "foo2": "some other extension property",
+                "image": {
+                  "url": "http://example.org/martin/image",
+                  "width": 250,
+                  "height": 250
+                },
+                "displayName": "Martin Smith"
+            },
+        },
+    }
+
+3.2 Presence
+~~~~~~~~~~~~
+
+Presence stanzas are used to express an entity's current network availability
+(offline or online, along with various sub-states of the latter and optional
+user-defined descriptive text), and to notify other entities of that 
+availability. Unlike XMPP Presence stanzas are **not** used to negotiate 
+and manage subscriptions to the presence of other entities. Web
+applications are assumed to have their own unique ways of handling
+subscriptions.
+
+3.2.1 Available
+...............
+
+A boolean value to indicate if the user is available for communication.
+
+
+3.2.2 Show
+..........
+
+The OPTIONAL attribute contains non-human-readable character data that 
+specifies the particular availability status of an entity or specific 
+resource.
+
+* away -- The entity or resource is temporarily away.
+* chat -- The entity or resource is actively interested in chatting.
+* dnd -- The entity or resource is busy (dnd = "Do Not Disturb").
+* xa -- The entity or resource is away for an extended period 
+  (xa = "eXtended Away").
+
+3.2.3 Status
+............
+
+The OPTIONAL status element contains character data specifying a 
+natural-language description of availability status. It is normally 
+used in conjunction with the show element to provide a detailed 
+description of an availability state (e.g., "In a meeting").
+
+3.2.4 Entity 
+............
+
+The unique identifier of the entity of which the presence stanza has
+information about. 
+
+3.2.5 Example Presence
+.....................
+
+.. code:: js
+
+    {
+        "type": "presence"
+        "presence": [
+            {
+                "entity": "nereid.user,123",
+                "show": "chat",
+                "status": "A happy day",
+                "available": true,
+            }, {
+                "entity": "nereid.user,13",
+                "show": "dnd",
+                "status": "Busy in a meeting",
+                "available": true,
+            }
+        ],
+    }
+

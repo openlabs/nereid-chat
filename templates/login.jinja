@@ -1,0 +1,12 @@
+{% extends 'base.jinja' %}
+{% block main %}
+  <form action="" method="POST" id="login-form">
+      email <input type="text" name="email" /><br>
+      password <input type="password" name="password" /><br>
+      <button value="" type="submit">
+        <i class="icon-signin icon-white"></i>
+        {% trans %}Log In{% endtrans %}
+      </button>
+      <br/></br/>
+  </form>
+{% endblock %}
