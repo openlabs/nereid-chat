@@ -10,8 +10,8 @@
 import os
 import sys
 import json
-DIR = os.path.abspath(os.path.normpath(os.path.join(__file__,
-    '..', '..', '..', '..', '..', 'trytond')))
+DIR = os.path.abspath(os.path.normpath(os.path.join(
+    __file__, '..', '..', '..', '..', '..', 'trytond')))
 if os.path.isdir(DIR):
     sys.path.insert(0, os.path.dirname(DIR))
 
@@ -28,58 +28,71 @@ class TestChat(NereidTestCase):
 
     def setUp(self):
         trytond.tests.test_tryton.install_module('nereid_chat')
-        self.country_obj = POOL.get('country.country')
-        self.currency_obj = POOL.get('currency.currency')
-        self.company_obj = POOL.get('company.company')
-        self.nereid_website_obj = POOL.get('nereid.website')
-        self.url_map_obj = POOL.get('nereid.url_map')
-        self.language_obj = POOL.get('ir.lang')
-        self.nereid_user_obj = POOL.get('nereid.user')
-        self.chat_obj = POOL.get('nereid.chat')
-
-    def get_template_source(self, name):
-        '''
-        Return templates
-        '''
+        self.Currency = POOL.get('currency.currency')
+        self.Company = POOL.get('company.company')
+        self.Website = POOL.get('nereid.website')
+        self.UrlMap = POOL.get('nereid.url_map')
+        self.Language = POOL.get('ir.lang')
+        self.NereidUser = POOL.get('nereid.user')
+        self.Chat = POOL.get('nereid.chat')
+        self.Party = POOL.get('party.party')
+        self.Locale = POOL.get('nereid.website.locale')
         self.templates = {
             'localhost/login.jinja':
             '{{ login_form.errors }}{{ get_flashed_messages()|safe }}',
         }
-        return self.templates.get(name)
 
     def setup_defaults(self):
-        currency = self.currency_obj.create({
+        currency, = self.Currency.create([{
             'name': 'US Dollar',
             'code': 'USD',
             'symbol': '$',
-        })
-        company = self.company_obj.create({
-            'name': 'openlabs',
+        }])
+        company_party, = self.Party.create([{
+            'name': 'openlabs'
+        }])
+        company, = self.Company.create([{
+            'party': company_party,
             'currency': currency,
-        })
-        guest_user = self.nereid_user_obj.create({
-            'name': 'Guest User',
+        }])
+        guest_party, = self.Party.create([{
+            'name': 'Non registered user'
+        }])
+        guest_user, = self.NereidUser.create([{
+            'party': guest_party,
             'display_name': 'Guest User',
             'email': 'guest@openlabs.co.in',
-            'password': 'password',
             'company': company,
-        })
+        }])
+
+        # Create Locale
+        en_us, = self.Language.search([('code', '=', 'en_US')])
+        locale_en_us, = self.Locale.create([{
+            'code': 'en_US',
+            'language': en_us,
+            'currency': currency,
+        }])
 
         # Create website
-        url_map_id, = self.url_map_obj.search([], limit=1)
-        en_us, = self.language_obj.search([('code', '=', 'en_US')])
-        self.nereid_website_obj.create({
+        url_map, = self.UrlMap.search([], limit=1)
+        self.Website.create([{
             'name': 'localhost',
-            'url_map': url_map_id,
+            'url_map': url_map,
             'company': company,
             'application_user': USER,
-            'default_language': en_us,
+            'default_locale': locale_en_us,
             'guest_user': guest_user,
             'currencies': [('set', [currency])],
-        })
+        }])
+
+        # test party
+        test_party, = self.Party.create([{
+            'name': 'Registered User'
+        }])
         return {
             'company': company,
             'currency': currency,
+            'test_party': test_party,
         }
 
     def test_0010_get_or_create_room(self):
@@ -89,32 +102,32 @@ class TestChat(NereidTestCase):
         with Transaction().start(DB_NAME, USER, CONTEXT):
             data = self.setup_defaults()
 
-            user_1 = self.nereid_user_obj.create({
-                'name': 'Name',
+            user_1, = self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user1@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
-            user_2 = self.nereid_user_obj.create({
-                'name': 'Name 2',
+            }])
+            user_2, = self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user2@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
+            }])
 
             # Get or create a room.
-            room = self.chat_obj.get_or_create_room(user_1, user_2)
+            room = self.Chat.get_or_create_room(user_1.id, user_2.id)
 
             self.assertEqual(
                 room,
-                self.chat_obj.get_or_create_room(user_1, user_2)
+                self.Chat.get_or_create_room(user_1.id, user_2.id)
             )
             # Test the lookup the other way around
             self.assertEqual(
                 room,
-                self.chat_obj.get_or_create_room(user_2, user_1)
+                self.Chat.get_or_create_room(user_2.id, user_1.id)
             )
 
     def test_0020_get_or_create_room(self):
@@ -125,52 +138,52 @@ class TestChat(NereidTestCase):
         with Transaction().start(DB_NAME, USER, CONTEXT):
             data = self.setup_defaults()
 
-            user_1_1 = self.nereid_user_obj.create({
-                'name': 'Name',
+            user_1_1, = self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user11@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
-            user_1_2 = self.nereid_user_obj.create({
-                'name': 'Name 2',
+            }])
+            user_1_2, = self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user12@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
+            }])
 
-            user_2_1 = self.nereid_user_obj.create({
-                'name': 'Name',
+            user_2_1, = self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user21@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
-            user_2_2 = self.nereid_user_obj.create({
-                'name': 'Name 2',
+            }])
+            user_2_2, = self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user22@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
+            }])
 
             # get or create a room
             # 1_1 <-------> 1_2
             # 2_1 <-------> 2_2
             # 1_1 <-------> 2_2
-            r_11_12 = self.chat_obj.get_or_create_room(user_1_1, user_1_2)
-            r_21_22 = self.chat_obj.get_or_create_room(user_2_1, user_2_2)
-            r_11_22 = self.chat_obj.get_or_create_room(user_1_1, user_2_2)
+            r_11_12 = self.Chat.get_or_create_room(user_1_1, user_1_2)
+            r_21_22 = self.Chat.get_or_create_room(user_2_1, user_2_2)
+            r_11_22 = self.Chat.get_or_create_room(user_1_1, user_2_2)
 
             self.assertEqual(
-                r_11_12, self.chat_obj.get_or_create_room(user_1_1, user_1_2)
+                r_11_12, self.Chat.get_or_create_room(user_1_1, user_1_2)
             )
             self.assertEqual(
-                r_21_22, self.chat_obj.get_or_create_room(user_2_1, user_2_2)
+                r_21_22, self.Chat.get_or_create_room(user_2_1, user_2_2)
             )
             self.assertEqual(
-                r_11_22, self.chat_obj.get_or_create_room(user_1_1, user_2_2)
+                r_11_22, self.Chat.get_or_create_room(user_1_1, user_2_2)
             )
 
     def test_0030_get_or_create_room(self):
@@ -180,52 +193,52 @@ class TestChat(NereidTestCase):
         with Transaction().start(DB_NAME, USER, CONTEXT):
             data = self.setup_defaults()
 
-            user_1_1 = self.nereid_user_obj.create({
-                'name': 'Name',
+            user_1_1, = self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user11@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
-            user_1_2 = self.nereid_user_obj.create({
-                'name': 'Name 2',
+            }])
+            user_1_2, = self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user12@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
-            user_1_3 = self.nereid_user_obj.create({
-                'name': 'Name 2',
+            }])
+            user_1_3, = self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user13@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
+            }])
 
            # get or create a room
             # 1_1 <--->1_2<----> 1_3
             # 1_1 <-------> 1_2 (1:1 chat)
             # 1_1 <-------> 1_3 (1:1 chat)
             # 1_2 <-------> 1_3 (1:1 chat)
-            r_123 = self.chat_obj.get_or_create_room(
+            r_123 = self.Chat.get_or_create_room(
                 user_1_1, user_1_2, user_1_3
             )
-            r_12 = self.chat_obj.get_or_create_room(user_1_1, user_1_2)
-            r_13 = self.chat_obj.get_or_create_room(user_1_1, user_1_3)
-            r_23 = self.chat_obj.get_or_create_room(user_1_2, user_1_3)
+            r_12 = self.Chat.get_or_create_room(user_1_1, user_1_2)
+            r_13 = self.Chat.get_or_create_room(user_1_1, user_1_3)
+            r_23 = self.Chat.get_or_create_room(user_1_2, user_1_3)
 
             self.assertEqual(
                 r_123,
-                self.chat_obj.get_or_create_room(user_1_1, user_1_2, user_1_3)
+                self.Chat.get_or_create_room(user_1_1, user_1_2, user_1_3)
             )
             self.assertEqual(
-                r_12, self.chat_obj.get_or_create_room(user_1_1, user_1_2)
+                r_12, self.Chat.get_or_create_room(user_1_1, user_1_2)
             )
             self.assertEqual(
-                r_13, self.chat_obj.get_or_create_room(user_1_1, user_1_3)
+                r_13, self.Chat.get_or_create_room(user_1_1, user_1_3)
             )
             self.assertEqual(
-                r_23, self.chat_obj.get_or_create_room(user_1_1, user_1_2)
+                r_23, self.Chat.get_or_create_room(user_1_1, user_1_2)
             )
 
     def test_0040_post_message(self):
@@ -236,32 +249,32 @@ class TestChat(NereidTestCase):
             data = self.setup_defaults()
             app = self.get_app()
 
-            self.nereid_user_obj.create({
-                'name': 'Name',
+            self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user1@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
-            user_2 = self.nereid_user_obj.create({
-                'name': 'Name 2',
+            }])
+            user_2, = self.NereidUser.create([{
+                'party': data['test_party'],
                 'display_name': 'nome',
                 'email': 'user2@openlabs.co.in',
                 'password': 'password',
                 'company': data['company'],
-            })
+            }])
             login_data = {
                 'email': 'user1@openlabs.co.in',
                 'password': 'password',
             }
             with app.test_client() as c:
                 # Login
-                rv = c.post('/en_US/login', data=login_data)
+                rv = c.post('/login', data=login_data)
                 self.assertEqual(rv.status_code, 302)
 
                 # Test posting without thread_id
                 rv = c.post(
-                    '/en_US/nereid-chat/send-message',
+                    '/nereid-chat/send-message',
                     data={
                         'message': 'Send Message',
                     }
@@ -272,7 +285,7 @@ class TestChat(NereidTestCase):
                 # This will throw ValueError as logged in user is not a
                 # participant of thread.
                 rv = c.post(
-                    '/en_US/nereid-chat/send-message',
+                    '/nereid-chat/send-message',
                     data={
                         'message': 'Send Message',
                         'thread_id': '02bf6368-712f-4711-b059-f16ca5642d12',
@@ -282,9 +295,9 @@ class TestChat(NereidTestCase):
 
                 # Get session id
                 rv = c.post(
-                    '/en_US/nereid-chat/start-session',
+                    '/nereid-chat/start-session',
                     data={
-                        'user': user_2,
+                        'user': user_2.id,
                     }
                 )
                 self.assertEqual(rv.status_code, 200)
@@ -293,7 +306,7 @@ class TestChat(NereidTestCase):
 
                 # Try posting to correct thread_id
                 rv = c.post(
-                    '/en_US/nereid-chat/send-message',
+                    '/nereid-chat/send-message',
                     data={
                         'message': 'Send Message',
                         'thread_id': response_json['thread_id'],
