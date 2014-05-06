@@ -11,7 +11,7 @@ import uuid
 from gevent import queue
 import simplejson as json
 from nereid import request, render_template, jsonify, Response, abort, \
-    login_required
+    login_required, route
 from trytond.model import ModelView, ModelSQL, fields
 from trytond.transaction import Transaction
 from trytond.pool import Pool, PoolMeta
@@ -133,6 +133,7 @@ class NereidUser(ModelSQL, ModelView):
         return self.search([('id', '!=', self.id)])
 
     @classmethod
+    @route('/nereid-chat/get-friends')
     @login_required
     def chat_friends(cls):
         """
@@ -204,6 +205,7 @@ class NereidChat(ModelSQL, ModelView):
         return unicode(uuid.uuid4())
 
     @classmethod
+    @route('/nereid-chat/chat.js')
     @login_required
     def chat_js(cls):
         '''
@@ -215,6 +217,7 @@ class NereidChat(ModelSQL, ModelView):
         )
 
     @classmethod
+    @route('/nereid-chat/chat-base')
     @login_required
     def chat_template(cls):
         '''
@@ -253,6 +256,7 @@ class NereidChat(ModelSQL, ModelView):
             MQ.publish(user.id, presence_message)
 
     @classmethod
+    @route('/nereid-chat/start-session', methods=['POST'])
     @login_required
     def start_session(cls):
         '''
@@ -331,6 +335,7 @@ class NereidChat(ModelSQL, ModelView):
         return chats[0]
 
     @classmethod
+    @route('/nereid-chat/send-message', methods=['POST'])
     @login_required
     def send_message(cls):
         '''
@@ -344,8 +349,6 @@ class NereidChat(ModelSQL, ModelView):
                 'UUID': 'unique id of message',
             }
         '''
-        NereidUser = Pool().get('nereid.user')
-
         try:
             chat, = cls.search([
                 ('thread', '=', request.form['thread_id']),
@@ -403,6 +406,7 @@ class NereidChat(ModelSQL, ModelView):
         }])[0]
 
     @classmethod
+    @route('/nereid-chat/stream')
     @login_required
     def stream(cls):
         '''
