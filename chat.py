@@ -9,17 +9,26 @@ from datetime import datetime
 import uuid
 
 from gevent import queue
+from redis import Redis
 import simplejson as json
+from flask_wtf import Form
+from wtforms import IntegerField, validators
 from nereid import request, render_template, jsonify, Response, abort, \
-    login_required, route
+    login_required, route, current_app, current_user
 from trytond.model import ModelView, ModelSQL, fields
 from trytond.transaction import Transaction
+from trytond.config import CONFIG
 from trytond.pool import Pool, PoolMeta
 
 __all__ = ['NereidUser', 'NereidChat', 'ChatMember', 'Message']
 __metaclass__ = PoolMeta
 
 counter = {'c': 0}
+
+
+class NewChatForm(Form):
+    "New Chat Form"
+    user = IntegerField('User', [validators.Required()])
 
 
 class MessageQueue(object):
@@ -264,13 +273,12 @@ class NereidChat(ModelSQL, ModelView):
                 }
         '''
         NereidUser = Pool().get('nereid.user')
+        form = NewChatForm()
 
-        chat_with = request.form.get('user', 0, int)
+        if not form.validate_on_submit():
+            return jsonify(errors=form.errors), 400
 
-        if not chat_with:
-            abort(400, "Cannot find the person you want to talk to")
-
-        chat_with = NereidUser(chat_with)
+        chat_with = NereidUser(form.user.data)
         if not request.nereid_user.can_chat(chat_with):
             abort(403, "You can only talk to friends")
 
@@ -396,6 +404,31 @@ class NereidChat(ModelSQL, ModelView):
         }])[0]
 
     @classmethod
+    @route('/nereid-chat/token', methods=['POST'])
+    @login_required
+    def token(cls):
+        '''
+        Generate token for current_user with TTL of 1 hr.
+        '''
+        if hasattr(current_app, 'redis_client'):
+            redis_client = current_app.redis_client
+        else:
+            redis_client = Redis(
+                CONFIG.get('redis_host', 'localhost'),
+                int(CONFIG.get('redis_port', 6379))
+            )
+
+        token = unicode(uuid.uuid4())
+        key = 'chat:token:%s' % token
+        # Save token to redis and set TTL of 1 hr.
+        redis_client.set(key, current_user.id)
+        redis_client.expire(key, 3600)
+
+        return jsonify({
+            'token': token
+        })
+
+    @classmethod
     @route('/nereid-chat/stream')
     @login_required
     def stream(cls):
@@ -408,6 +441,38 @@ class NereidChat(ModelSQL, ModelView):
         return Response(
             cls.generate_event_stream(
                 request.nereid_user.id,
+                Transaction().cursor.dbname
+            ),
+            mimetype='text/event-stream'
+        )
+
+    @classmethod
+    @route('/nereid-chat/stream/<token>')
+    def stream_via_token(cls, token):
+        '''
+        Set token user to online and publish presence of this user to all
+        friends.
+        '''
+        NereidUser = Pool().get('nereid.user')
+
+        if hasattr(current_app, 'redis_client'):
+            redis_client = current_app.redis_client
+        else:
+            redis_client = Redis(
+                CONFIG.get('redis_host', 'localhost'),
+                int(CONFIG.get('redis_port', 6379))
+            )
+
+        key = 'chat:token:%s' % token
+        if not redis_client.exists(key):
+            abort(404)
+
+        nereid_user = NereidUser(int(redis_client.get(key)))
+        nereid_user.broadcast_presence()
+
+        return Response(
+            cls.generate_event_stream(
+                nereid_user.id,
                 Transaction().cursor.dbname
             ),
             mimetype='text/event-stream'
