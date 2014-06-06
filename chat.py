@@ -2,7 +2,7 @@
 """
     chat
 
-    :copyright: (c) 2013 by Openlabs Technologies & Consulting (P) Limited
+    :copyright: (c) 2013-2014 by Openlabs Technologies & Consulting (P) Limited
     :license: BSD, see LICENSE for more details.
 """
 from datetime import datetime
@@ -107,7 +107,7 @@ class NereidUser(ModelSQL, ModelView):
         '''
         return not MQ.is_user_offline(self)
 
-    def _json(self):
+    def serialize(self, purpose=None):
         """
         Serialize the sender alone and return a dictionary. This is separated
         so that other modules can easily modify the behavior independent of
@@ -132,6 +132,25 @@ class NereidUser(ModelSQL, ModelView):
         """
         return self.search([('id', '!=', self.id)])
 
+    def publish_message(self, data_message):
+        '''
+        Publishes message to user's channel/queue
+        '''
+        return MQ.publish(self.id, data_message)
+
+    def broadcast_presence(self):
+        '''
+        Publishes presence to all friends.
+        '''
+        presence_message = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "presence",
+            "presence": self.get_presence(),
+        }
+        friends = self.get_chat_friends()
+        for user in friends:
+            MQ.publish(user.id, presence_message)
+
     @classmethod
     @route('/nereid-chat/get-friends')
     @login_required
@@ -153,7 +172,7 @@ class NereidUser(ModelSQL, ModelView):
         Returns the presence status of a nereid_user.
         '''
         return {
-            "entity": self._json(),
+            "entity": self.serialize(),
             "show": "chat",
             "status": None,
             'available': self.chat_available,
@@ -231,31 +250,6 @@ class NereidChat(ModelSQL, ModelView):
         )
 
     @classmethod
-    def publish_message(cls, user, data_message):
-        '''
-        Publishes message to channel/queue
-        '''
-        # XXX: this method should be in nereid_user
-        return MQ.publish(user.id, data_message)
-
-    @classmethod
-    def publish_presence(cls, nereid_user):
-        '''
-        Publishes presence to all friends.
-
-        :param nereid_user: Browse record of nereid.user.
-        '''
-        # XXX: this method should be in nereid user
-        presence_message = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "type": "presence",
-            "presence": nereid_user.get_presence(),
-        }
-        friends = nereid_user.get_chat_friends()
-        for user in friends:
-            MQ.publish(user.id, presence_message)
-
-    @classmethod
     @route('/nereid-chat/start-session', methods=['POST'])
     @login_required
     def start_session(cls):
@@ -265,7 +259,6 @@ class NereidChat(ModelSQL, ModelView):
 
         :return: JSON as
                 {
-                    success: 'True/False',
                     thread_id: uuid,
                     members: Serialized members list.
                 }
@@ -285,10 +278,9 @@ class NereidChat(ModelSQL, ModelView):
             request.nereid_user.id, chat_with.id
         )
         return jsonify({
-            'success': True,
             'thread_id': chat.thread,
             'members': map(
-                lambda m: m.user._json(), chat.members
+                lambda m: m.user.serialize(), chat.members
             )
         })
 
@@ -345,7 +337,6 @@ class NereidChat(ModelSQL, ModelView):
             type: (optional) Type of message, Default: plain
 
         :return: JSON ad {
-                'success': True/False,
                 'UUID': 'unique id of message',
             }
         '''
@@ -368,9 +359,9 @@ class NereidChat(ModelSQL, ModelView):
                 "attachments": [],
                 "id": unicode(uuid.uuid4()),
                 "thread": chat.thread,
-                "sender": request.nereid_user._json(),
+                "sender": request.nereid_user.serialize(),
                 'members': map(
-                    lambda m: m.user._json(),
+                    lambda m: m.user.serialize(),
                     chat.members
                 )
             }
@@ -380,14 +371,13 @@ class NereidChat(ModelSQL, ModelView):
         cls.save_message(chat, request.nereid_user, data_message)
 
         # Publish my presence too
-        cls.publish_presence(request.nereid_user)
+        request.nereid_user.broadcast_presence()
 
         # Publish the message to the queue system
         for receiver in chat.members:
-            cls.publish_message(receiver.user, data_message)
+            receiver.user.publish_message(data_message)
 
         return jsonify({
-            'success': True,
             'UUID': unicode(data_message['message']['id']),
         })
 
@@ -410,10 +400,10 @@ class NereidChat(ModelSQL, ModelView):
     @login_required
     def stream(cls):
         '''
-        Set user to online in Redis and publish presence of this user to all
+        Set user to online and publish presence of this user to all
         friends.
         '''
-        cls.publish_presence(request.nereid_user)
+        request.nereid_user.broadcast_presence()
 
         return Response(
             cls.generate_event_stream(
