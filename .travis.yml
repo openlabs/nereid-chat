@@ -4,5 +4,9 @@ python:
 install: 
   - pip install git+ssh://git@github.com/openlabs/nereid.git
   - python setup.py install
-before_install: "sudo apt-get install python-dev libevent-dev"
-script: python setup.py test
+before_install:
+  - sudo apt-get install python-dev libevent-dev
+  - pip install flake8
+script:
+  - python setup.py test
+  - flake8 .
