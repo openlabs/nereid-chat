@@ -4,7 +4,7 @@
 
     test the chat system components
 
-    :copyright: (c) 2013 by Openlabs Technologies & Consulting (P) Limited
+    :copyright: (c) 2013-2014 by Openlabs Technologies & Consulting (P) Limited
     :license: BSD, see LICENSE for more details.
 """
 import os
@@ -215,7 +215,7 @@ class TestChat(NereidTestCase):
                 'company': data['company'],
             }])
 
-           # get or create a room
+            # get or create a room
             # 1_1 <--->1_2<----> 1_3
             # 1_1 <-------> 1_2 (1:1 chat)
             # 1_1 <-------> 1_3 (1:1 chat)
@@ -302,7 +302,6 @@ class TestChat(NereidTestCase):
                 )
                 self.assertEqual(rv.status_code, 200)
                 response_json = json.loads(rv.data)
-                self.assertTrue(response_json['success'])
 
                 # Try posting to correct thread_id
                 rv = c.post(
@@ -313,8 +312,6 @@ class TestChat(NereidTestCase):
                     }
                 )
                 self.assertEqual(rv.status_code, 200)
-                # Any listener is not there so success will be false
-                self.assertTrue(json.loads(rv.data)['success'])
 
 
 def _suite():
