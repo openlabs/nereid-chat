@@ -9,6 +9,7 @@
 """
 import os
 import sys
+import uuid
 import json
 DIR = os.path.abspath(os.path.normpath(os.path.join(
     __file__, '..', '..', '..', '..', '..', 'trytond')))
@@ -16,6 +17,7 @@ if os.path.isdir(DIR):
     sys.path.insert(0, os.path.dirname(DIR))
 
 import unittest
+from redis import Redis
 import trytond.tests.test_tryton
 from trytond.tests.test_tryton import POOL, DB_NAME, USER, CONTEXT
 from trytond.transaction import Transaction
@@ -41,6 +43,7 @@ class TestChat(NereidTestCase):
             'localhost/login.jinja':
             '{{ login_form.errors }}{{ get_flashed_messages()|safe }}',
         }
+        Redis().flushdb()
 
     def setup_defaults(self):
         currency, = self.Currency.create([{
@@ -311,6 +314,65 @@ class TestChat(NereidTestCase):
                         'thread_id': response_json['thread_id'],
                     }
                 )
+                self.assertEqual(rv.status_code, 200)
+
+    def test_0050_token_creation(self):
+        """
+        Test creation of token
+        """
+        with Transaction().start(DB_NAME, USER, CONTEXT):
+            data = self.setup_defaults()
+            app = self.get_app()
+            app.redis_client = Redis()
+
+            self.NereidUser.create([{
+                'party': data['test_party'],
+                'display_name': 'nome',
+                'email': 'user1@openlabs.co.in',
+                'password': 'password',
+                'company': data['company'],
+            }])
+            login_data = {
+                'email': 'user1@openlabs.co.in',
+                'password': 'password',
+            }
+            with app.test_client() as c:
+                # Login
+                rv = c.post('/login', data=login_data)
+                self.assertEqual(rv.status_code, 302)
+
+                rv = c.get('/nereid-chat/token')
+                self.assertEqual(rv.status_code, 405)
+
+                rv = c.post('/nereid-chat/token')
+                self.assertEqual(rv.status_code, 200)
+
+                self.assertTrue('token' in json.loads(rv.data))
+
+    def test_0060_token_event_stream(self):
+        """
+        Test fetching of stream via token
+        """
+        with Transaction().start(DB_NAME, USER, CONTEXT):
+            data = self.setup_defaults()
+            app = self.get_app()
+            app.redis_client = Redis()
+
+            nereid_user, = self.NereidUser.create([{
+                'party': data['test_party'],
+                'display_name': 'nome',
+                'email': 'user1@openlabs.co.in',
+                'password': 'password',
+                'company': data['company'],
+            }])
+            with app.test_client() as c:
+                token = unicode(uuid.uuid4())
+                app.redis_client.set('chat:token:%s' % token, nereid_user.id)
+
+                rv = c.get('/nereid-chat/stream/wrong-token')
+                self.assertEqual(rv.status_code, 404)
+
+                rv = c.get('/nereid-chat/stream/%s' % token)
                 self.assertEqual(rv.status_code, 200)
 
 

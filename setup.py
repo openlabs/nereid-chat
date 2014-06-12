@@ -95,6 +95,7 @@ minor_version = int(minor_version)
 
 requires = [
     'gevent',
+    'redis',
     'simplejson',
     'trytond_nereid >=3.0.7.0, <3.1',
 ]
