@@ -36,13 +36,13 @@ CONFIG = dict(
     TRYTON_CONFIG='%s/etc/trytond.conf' % app_root_path,
 
     # Cache backend type
-    #CACHE_TYPE='werkzeug.contrib.cache.MemcachedCache',
+    # CACHE_TYPE='werkzeug.contrib.cache.MemcachedCache',
 
     # Cache Memcached Servers
     # (Only if SESSION_STORE_CLASS or CACHE_TYPE is Memcached)
     # eg: ['localhost:11211']
-    #CACHE_MEMCACHED_SERVERS = ['localhost:11211'],
-    #CACHE_MEMCACHED_SERVERS = ['mc1:11211', 'mc2:11211'],
+    # CACHE_MEMCACHED_SERVERS = ['localhost:11211'],
+    # CACHE_MEMCACHED_SERVERS = ['mc1:11211', 'mc2:11211'],
 
     # If the application is to be configured in the debug mode
     DEBUG=False,

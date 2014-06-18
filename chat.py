@@ -2,21 +2,33 @@
 """
     chat
 
-    :copyright: (c) 2013 by Openlabs Technologies & Consulting (P) Limited
+    :copyright: (c) 2013-2014 by Openlabs Technologies & Consulting (P) Limited
     :license: BSD, see LICENSE for more details.
 """
 from datetime import datetime
 import uuid
 
 from gevent import queue
+from redis import Redis
 import simplejson as json
+from flask_wtf import Form
+from wtforms import IntegerField, validators
 from nereid import request, render_template, jsonify, Response, abort, \
-    login_required
+    login_required, route, current_app, current_user
 from trytond.model import ModelView, ModelSQL, fields
 from trytond.transaction import Transaction
-from trytond.pool import Pool
+from trytond.config import CONFIG
+from trytond.pool import Pool, PoolMeta
+
+__all__ = ['NereidUser', 'NereidChat', 'ChatMember', 'Message']
+__metaclass__ = PoolMeta
 
 counter = {'c': 0}
+
+
+class NewChatForm(Form):
+    "New Chat Form"
+    user = IntegerField('User', [validators.Required()])
 
 
 class MessageQueue(object):
@@ -91,39 +103,33 @@ class NereidUser(ModelSQL, ModelView):
     '''
     Nereid User
     '''
-    _name = 'nereid.user'
+    __name__ = 'nereid.user'
 
     chat_available = fields.Function(
         fields.Boolean('Available'), 'get_available'
     )
 
-    def get_available(self, ids, name):
+    def get_available(self, name):
         '''
         Looks into the message queue and figures out if the user is available
         or not
         '''
-        res = {}
-        for user in ids:
-            res[user] = not MQ.is_user_offline(user)
-        return res
+        return not MQ.is_user_offline(self)
 
-    def _json(self, sender):
+    def serialize(self, purpose=None):
         """
         Serialize the sender alone and return a dictionary. This is separated
         so that other modules can easily modify the behavior independent of
         this module.
-
-        :param sender: Browse record of nereid.user.
         """
         return {
             "url": None,
-            "objectType": self._name,
-            "id": sender.id,
-            "displayName": sender.display_name,
+            "objectType": self.__name__,
+            "id": self.id,
+            "displayName": self.display_name,
         }
 
-    @login_required
-    def get_chat_friends(self, nereid_user):
+    def get_chat_friends(self):
         """
         Returns list of friends of nereid_user. This is separated so that
         other modules can easily modify the behavior independent of this
@@ -131,64 +137,73 @@ class NereidUser(ModelSQL, ModelView):
         This is for other modules which implement the functionality to extend.
         Current functionality allows all are chatting friends.
 
-        :param nereid_user: Browse record of nereid.user.
         :return: List of browse records of friends.
         """
-        return filter(
-            lambda user: user != request.nereid_user,
-            self.browse(self.search([]))
-        )
+        return self.search([('id', '!=', self.id)])
 
+    def publish_message(self, data_message):
+        '''
+        Publishes message to user's channel/queue
+        '''
+        return MQ.publish(self.id, data_message)
+
+    def broadcast_presence(self):
+        '''
+        Publishes presence to all friends.
+        '''
+        presence_message = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "type": "presence",
+            "presence": self.get_presence(),
+        }
+        friends = self.get_chat_friends()
+        for user in friends:
+            MQ.publish(user.id, presence_message)
+
+    @classmethod
+    @route('/nereid-chat/get-friends')
     @login_required
-    def chat_friends(self):
+    def chat_friends(cls):
         """
         GET: Returns the JSON dictionary of all chat friends with their
         presence stanza.
         """
-        friends = self.get_chat_friends(request.nereid_user)
+        friends = request.nereid_user.get_chat_friends()
         friends_presence = []
         for friend in friends:
-            friends_presence.append(self.get_presence(friend))
+            friends_presence.append(friend.get_presence())
         return jsonify({
             'friends': friends_presence,
         })
 
-    def get_presence(self, nereid_user):
+    def get_presence(self):
         '''
         Returns the presence status of a nereid_user.
-
-        :param nereid_user: Browse record of nereid.user.
         '''
         return {
-            "entity": self._json(nereid_user),
+            "entity": self.serialize(),
             "show": "chat",
             "status": None,
-            'available': nereid_user.chat_available,
+            'available': self.chat_available,
         }
 
-    def can_chat(self, me, other):
+    def can_chat(self, other):
         '''
         Return True if the user can talk to the other user.
 
         This is for other modules which implement the functionality to extend.
         Current functionality allows to talk to user's chat friends only.
 
-        :param me: Browse record of nereid_user, to check permission of.
         :param other: Browse record of nereid_user, to check permission with.
         '''
-        if other in self.get_chat_friends(me):
-            return True
-        return False
-
-NereidUser()
+        return other in self.get_chat_friends()
 
 
 class NereidChat(ModelSQL, ModelView):
     '''
     Nereid Chat
     '''
-    _name = 'nereid.chat'
-    _description = __doc__
+    __name__ = 'nereid.chat'
 
     thread = fields.Char('Thread ID')
     members = fields.One2Many(
@@ -202,100 +217,83 @@ class NereidChat(ModelSQL, ModelView):
         'nereid.chat.message', 'chat', 'Messages'
     )
 
-    def __init__(self):
-        super(NereidChat, self).__init__()
-        self._sql_constraints += [
+    @classmethod
+    def __setup__(cls):
+        super(NereidChat, cls).__setup__()
+        cls._sql_constraints += [
             ('unique_thread', 'UNIQUE(thread)',
                 'Thread should be unique.'),
         ]
 
-    def default_thread(self):
+    @staticmethod
+    def default_thread():
         '''
         Returns default thread id.
         '''
         return unicode(uuid.uuid4())
 
+    @classmethod
+    @route('/nereid-chat/chat.js')
     @login_required
-    def chat_js(self):
+    def chat_js(cls):
         '''
         Renders the JavaScript required for application to run.
         '''
         return Response(
-            render_template('chat/chat.jinja'),
+            unicode(render_template('chat/chat.jinja')),
             mimetype='text/javascript'
         )
 
+    @classmethod
+    @route('/nereid-chat/chat-base')
     @login_required
-    def chat_template(self):
+    def chat_template(cls):
         '''
         The rendered templates are used by the javascript code to fetch chat
         views. You can modify this template to change the look and feel of your
         chat app.
         '''
         return Response(
-            render_template('chat/chat_base.jinja'),
+            unicode(render_template('chat/chat_base.jinja')),
             mimetype='text/template'
         )
 
-    def publish_message(self, user, data_message):
-        '''
-        Publishes message to channel/queue
-        '''
-        return MQ.publish(user.id, data_message)
-
-    def publish_presence(self, nereid_user):
-        '''
-        Publishes presence to all friends.
-
-        :param nereid_user: Browse record of nereid.user.
-        '''
-        nereid_user_obj = Pool().get('nereid.user')
-
-        presence_message = {
-            "timestamp": datetime.utcnow().isoformat(),
-            "type": "presence",
-            "presence": nereid_user_obj.get_presence(nereid_user),
-        }
-        friends = nereid_user_obj.get_chat_friends(nereid_user)
-        for user in friends:
-            MQ.publish(user.id, presence_message)
-
+    @classmethod
+    @route('/nereid-chat/start-session', methods=['POST'])
     @login_required
-    def start_session(self):
+    def start_session(cls):
         '''
         POST: Start chat session with another user.
             :args user: User Id of nereid user.
 
         :return: JSON as
                 {
-                    success: 'True/False',
                     thread_id: uuid,
                     members: Serialized members list.
                 }
         '''
-        nereid_user_obj = Pool().get('nereid.user')
+        NereidUser = Pool().get('nereid.user')
+        form = NewChatForm()
 
-        chat_with = request.form.get('user', 0, int)
+        if not form.validate_on_submit():
+            return jsonify(errors=form.errors), 400
 
-        if not chat_with:
-            abort(400, "Cannot find the person you want to talk to")
-
-        chat_with = nereid_user_obj.browse(chat_with)
-        if not nereid_user_obj.can_chat(request.nereid_user, chat_with):
+        chat_with = NereidUser(form.user.data)
+        if not request.nereid_user.can_chat(chat_with):
             abort(403, "You can only talk to friends")
 
-        chat = self.get_or_create_room(
+        chat = cls.get_or_create_room(
             request.nereid_user.id, chat_with.id
         )
         return jsonify({
-            'success': True,
             'thread_id': chat.thread,
             'members': map(
-                lambda m: nereid_user_obj._json(m.user), chat.members
+                lambda m: m.user.serialize(), chat.members
             )
         })
 
-    def get_or_create_room(self, owner, *users):
+    @classmethod
+    def get_or_create_room(cls, owner, *users):
         """
         Given a list of user ids, it finds a chat room for them
         where only these users are members.
@@ -313,31 +311,33 @@ class NereidChat(ModelSQL, ModelView):
         for user in users:
             domain.append(('members.user', '=', user))
 
-        chat_ids = self.search(domain, limit=1)
+        chats = cls.search(domain, limit=1)
 
-        if not chat_ids:
+        if not chats:
             # create a chat since one does not exist
             values = {
                 'members': [
-                    ('create', {
+                    ('create', [{
                         'user': owner,
                         'role': 'owner'
-                    }),
+                    }]),
                 ]
             }
             for user in users:
                 values['members'].append((
-                    'create', {
+                    'create', [{
                         'user': user,
                         'role': 'guest'
-                    }
+                    }]
                 ))
-            chat_ids = [self.create(values)]
+            chats = cls.create([values])
 
-        return self.browse(chat_ids[0])
+        return chats[0]
 
+    @classmethod
+    @route('/nereid-chat/send-message', methods=['POST'])
     @login_required
-    def send_message(self):
+    def send_message(cls):
         '''
         POST: Publish messages to a thread.
             thread_id: thread id of session.
@@ -345,17 +345,14 @@ class NereidChat(ModelSQL, ModelView):
             type: (optional) Type of message, Default: plain
 
         :return: JSON ad {
-                'success': True/False,
                 'UUID': 'unique id of message',
             }
         '''
-        nereid_user_obj = Pool().get('nereid.user')
-
         try:
-            chat, = self.browse(self.search([
+            chat, = cls.search([
                 ('thread', '=', request.form['thread_id']),
                 ('members.user', '=', request.nereid_user.id)
-            ]))
+            ])
         except ValueError:
             abort(404)
 
@@ -370,53 +367,112 @@ class NereidChat(ModelSQL, ModelView):
                 "attachments": [],
                 "id": unicode(uuid.uuid4()),
                 "thread": chat.thread,
-                "sender": nereid_user_obj._json(request.nereid_user),
+                "sender": request.nereid_user.serialize(),
                 'members': map(
-                    lambda m: nereid_user_obj._json(m.user),
+                    lambda m: m.user.serialize(),
                     chat.members
                 )
             }
         }
 
         # Save the message to messages list
-        self.save_message(chat, request.nereid_user, data_message)
+        cls.save_message(chat, request.nereid_user, data_message)
 
         # Publish my presence too
-        self.publish_presence(request.nereid_user)
+        request.nereid_user.broadcast_presence()
 
         # Publish the message to the queue system
         for receiver in chat.members:
-            self.publish_message(receiver.user, data_message)
+            receiver.user.publish_message(data_message)
 
         return jsonify({
-            'success': True,
             'UUID': unicode(data_message['message']['id']),
         })
 
-    def save_message(self, chat, user, data_message):
+    @classmethod
+    def save_message(cls, chat, user, data_message):
         '''
         This should not be used in production as saving each chat message to
         the database might be costly
         '''
-        message_obj = Pool().get('nereid.chat.message')
+        Message = Pool().get('nereid.chat.message')
 
-        return message_obj.create({
+        return Message.create([{
             'chat': chat.id,
             'message': json.dumps(data_message),
             'user': user.id
+        }])[0]
+
+    @classmethod
+    @route('/nereid-chat/token', methods=['POST'])
+    @login_required
+    def token(cls):
+        '''
+        Generate token for current_user with TTL of 1 hr.
+        '''
+        if hasattr(current_app, 'redis_client'):
+            redis_client = current_app.redis_client
+        else:
+            redis_client = Redis(
+                CONFIG.get('redis_host', 'localhost'),
+                int(CONFIG.get('redis_port', 6379))
+            )
+
+        token = unicode(uuid.uuid4())
+        key = 'chat:token:%s' % token
+        # Save token to redis and set TTL of 1 hr.
+        redis_client.set(key, current_user.id)
+        redis_client.expire(key, 3600)
+
+        return jsonify({
+            'token': token
         })
 
+    @classmethod
+    @route('/nereid-chat/stream')
     @login_required
-    def stream(self):
+    def stream(cls):
         '''
-        Set user to online in Redis and publish presence of this user to all
+        Set user to online and publish presence of this user to all
         friends.
         '''
-        self.publish_presence(request.nereid_user)
+        request.nereid_user.broadcast_presence()
 
         return Response(
-            self.generate_event_stream(
+            cls.generate_event_stream(
                 request.nereid_user.id,
+                Transaction().cursor.dbname
+            ),
+            mimetype='text/event-stream'
+        )
+
+    @classmethod
+    @route('/nereid-chat/stream/<token>')
+    def stream_via_token(cls, token):
+        '''
+        Set token user to online and publish presence of this user to all
+        friends.
+        '''
+        NereidUser = Pool().get('nereid.user')
+
+        if hasattr(current_app, 'redis_client'):
+            redis_client = current_app.redis_client
+        else:
+            redis_client = Redis(
+                CONFIG.get('redis_host', 'localhost'),
+                int(CONFIG.get('redis_port', 6379))
+            )
+
+        key = 'chat:token:%s' % token
+        if not redis_client.exists(key):
+            abort(404)
+
+        nereid_user = NereidUser(int(redis_client.get(key)))
+        nereid_user.broadcast_presence()
+
+        return Response(
+            cls.generate_event_stream(
+                nereid_user.id,
                 Transaction().cursor.dbname
             ),
             mimetype='text/event-stream'
@@ -435,15 +491,12 @@ class NereidChat(ModelSQL, ModelView):
         for item in MQ.listen(user, dbname):
             yield 'data: %s\n\n' % json.dumps(item)
 
-NereidChat()
-
 
 class ChatMember(ModelSQL):
     """
     Chat members
     """
-    _name = "nereid.chat.member"
-    _doc = __doc__
+    __name__ = "nereid.chat.member"
 
     chat = fields.Many2One(
         'nereid.chat', 'Chat', select=True, required=True
@@ -456,13 +509,12 @@ class ChatMember(ModelSQL):
         ('guest', 'guest'),
     ], 'Role', required=True)
 
-    def default_role(self):
+    @staticmethod
+    def default_role():
         '''
         Returns default role of chat member to a chat.
         '''
         return 'guest'
-
-ChatMember()
 
 
 class Message(ModelSQL):
@@ -478,15 +530,14 @@ class Message(ModelSQL):
         writes and may not be scalable. Instead use a key value store like
         redis.
     '''
-    _name = 'nereid.chat.message'
+    __name__ = 'nereid.chat.message'
 
     create_date = fields.DateTime('Create Date', select=True)
     chat = fields.Many2One('nereid.chat', 'Chat', select=True, required=True)
     user = fields.Many2One('nereid.user', 'User', select=True, required=True)
     message = fields.Text('Message')
 
-    def __init__(self):
-        super(Message, self).__init__()
-        self._order.insert(0, ('create_date', 'DESC'))
-
-Message()
+    @classmethod
+    def __setup__(cls):
+        super(Message, cls).__setup__()
+        cls._order.insert(0, ('create_date', 'DESC'))
