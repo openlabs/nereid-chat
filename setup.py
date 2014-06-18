@@ -110,9 +110,10 @@ requires.append('trytond >= %s.%s, < %s.%s' % (
     major_version, minor_version, major_version, minor_version + 1))
 
 setup(
-    name='trytond_nereid_chat',
+    name='openlabs_nereid_chat',
     version=info.get('version', '0.0.1'),
     description='Nereid Chat module',
+    long_description=read('README.rst'),
     author="Openlabs Technologies & Consulting (P) LTD",
     author_email="info@openlabs.co.in",
     url="http://www.openlabs.co.in/",
